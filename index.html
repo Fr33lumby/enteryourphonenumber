@@ -10,7 +10,7 @@
         margin: 0;
         padding: 0;
         overflow: hidden;
-        /* Prevent text selection and iOS callouts */
+        /* Prevent text selection and callout on iOS */
         -webkit-user-select: none;
         -webkit-touch-callout: none;
         user-select: none;
@@ -35,11 +35,11 @@
         font-size: 16px;
         z-index: 100;
       }
-      /* Control buttons */
+      /* Transparent control buttons */
       .control-button {
         position: fixed;
         padding: 10px 20px;
-        background: rgba(255,255,255,0.8);
+        background: rgba(255, 255, 255, 0.3); /* transparent */
         border: none;
         border-radius: 5px;
         font-size: 18px;
@@ -49,7 +49,7 @@
       #accelerateBtn { left: 20px; bottom: 20px; }
       #decelerateBtn { left: 160px; bottom: 20px; }
       #enableTiltBtn { right: 20px; top: 20px; }
-      /* Joystick zones */
+      /* Joystick zones (nipplejs will render inside these) */
       #joystickLeft, #joystickRight {
         position: fixed;
         bottom: 100px;
@@ -76,7 +76,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://threejs.org/examples/jsm/loaders/FontLoader.js"></script>
     <script src="https://threejs.org/examples/jsm/geometries/TextGeometry.js"></script>
-    <!-- Include nipplejs -->
+    <!-- Include nipplejs from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.7.3/nipplejs.min.js"></script>
     
     <script>
@@ -96,13 +96,17 @@
       let oldTime = 0;
       const keysPressed = {};
       
-      // Device orientation (gyro) values (we invert them to get desired control)
+      // Device orientation (gyro) values (inverted)
       let tiltPitch = 0, tiltYaw = 0;
-      // Throttle input from buttons/joystick
+      // Throttle input from buttons
       let throttleInput = 0;
       let flightFrozen = false, landingTriggered = false;
       
       let font = null;
+      
+      // Global joystick input objects (nipplejs values: -1 to 1)
+      let joystickInputLeft = { x: 0, y: 0 };
+      let joystickInputRight = { y: 0 };
       
       /*********** Helper Functions ***********/
       function generateRandomNumberString(minLen, maxLen) {
@@ -356,10 +360,11 @@
         if (keysPressed["KeyW"]) keyboardThrottle += 1;
         if (keysPressed["KeyS"]) keyboardThrottle -= 1;
       
-        // Combine gyro (inverted), keyboard, and throttle button input.
-        let totalPitch = keyboardPitch + (-tiltPitch);
-        let totalYaw = keyboardYaw + (-tiltYaw);
-        let totalThrottle = keyboardThrottle + throttleInput;
+        // Combine gyro, keyboard, and joystick inputs.
+        // Invert gyro inputs so that tilting up increases pitch.
+        let totalPitch = keyboardPitch + (-tiltPitch) + joystickInputLeft.y;
+        let totalYaw = keyboardYaw + (-tiltYaw) + joystickInputLeft.x;
+        let totalThrottle = keyboardThrottle + throttleInput + joystickInputRight.y;
       
         pitchAngle += totalPitch * pitchSpeed * delta;
         yawAngle += totalYaw * yawSpeed * delta;
@@ -533,10 +538,10 @@
       });
       
       function handleDeviceOrientation(event) {
-        // Invert beta and gamma so tilting up/nose up increases pitch and tilting right increases yaw.
+        // Invert beta and gamma so that tilting up (beta) increases pitch and tilting right (gamma) increases yaw.
         tiltPitch = THREE.MathUtils.clamp(-event.beta / 45, -1, 1);
         tiltYaw = THREE.MathUtils.clamp(-event.gamma / 45, -1, 1);
-        // Uncomment to debug:
+        // Uncomment for debugging:
         // console.log("Tilt:", tiltPitch.toFixed(2), tiltYaw.toFixed(2));
       }
       
@@ -567,7 +572,7 @@
         });
         joystickL.on("move", (evt, data) => {
           if (data && data.vector) {
-            // Here we simply override the gyro input; you could also combine them.
+            // Add joystick input to control.
             joystickInputLeft.x = data.vector.x;
             joystickInputLeft.y = data.vector.y;
             // Uncomment to debug:
@@ -602,10 +607,6 @@
       }
       
       /*********** Start the Simulator ***********/
-      // Global variables for nipplejs joystick inputs:
-      let joystickInputLeft = { x: 0, y: 0 };
-      let joystickInputRight = { y: 0 };
-      
       init();
       createUFOs();
       createSkyContrails();
