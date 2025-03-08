@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- Mobile viewport -->
+    <!-- Added for mobile responsiveness -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dynamic Flight Sim Phone Input – UFO & Contrails Edition</title>
     <style>
@@ -62,29 +62,29 @@
         margin-bottom: 20px;
         pointer-events: none;
       }
-      /* Joystick Styles */
-      .joystick {
+      /* Mobile Controls Styling */
+      #mobileControls {
         position: fixed;
         bottom: 20px;
-        width: 100px;
-        height: 100px;
-        border: 2px solid rgba(255,255,255,0.8);
-        border-radius: 50%;
-        background: rgba(0,0,0,0.3);
-        touch-action: none;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
         z-index: 101;
       }
-      #joystickLeft { left: 20px; }
-      #joystickRight { right: 20px; }
-      .joystick .joystick-thumb {
-        position: absolute;
-        width: 50px;
-        height: 50px;
+      #mobileControls .control-row {
+        margin: 5px;
+        display: flex;
+      }
+      #mobileControls button {
+        font-size: 24px;
+        padding: 10px 20px;
+        margin: 5px;
+        border: none;
+        border-radius: 5px;
         background: rgba(255,255,255,0.8);
-        border-radius: 50%;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
+        color: #000;
       }
     </style>
   </head>
@@ -96,12 +96,20 @@
       <div id="dropOffText">Your Number:</div>
       <input type="text" id="dropOffInput" readonly />
     </div>
-    <!-- Touch Joysticks -->
-    <div id="joystickLeft" class="joystick">
-      <div class="joystick-thumb"></div>
-    </div>
-    <div id="joystickRight" class="joystick">
-      <div class="joystick-thumb"></div>
+    <!-- Mobile Controls -->
+    <div id="mobileControls">
+      <div class="control-row">
+        <button id="upBtn">↑</button>
+      </div>
+      <div class="control-row">
+        <button id="leftBtn">←</button>
+        <button id="downBtn">↓</button>
+        <button id="rightBtn">→</button>
+      </div>
+      <div class="control-row">
+        <button id="accelerateBtn">W</button>
+        <button id="decelerateBtn">S</button>
+      </div>
     </div>
     <!-- Include Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -123,14 +131,10 @@
       
       // Flight control variables (using pitch and yaw)
       let pitchAngle = 0, yawAngle = 0;
-      let speed = 1.0, maxSpeed = 4000.0, minSpeed = 0.1, acceleration = 0.1;
-      const pitchSpeed = 0.03, yawSpeed = 0.03;
+      let speed = 1.0, maxSpeed = 4000.0, minSpeed = 0.1, acceleration = 0.5;
+      const pitchSpeed = 0.07, yawSpeed = 0.07;
       let oldTime = 0;
       const keysPressed = {};
-      
-      // Joystick variables (normalized values between -1 and 1)
-      let joystickLeft = { x: 0, y: 0 };  // Controls pitch & yaw
-      let joystickRight = { y: 0 };         // Controls throttle
       
       // Flags for landing and freezing flight
       let landingTriggered = false;
@@ -223,10 +227,12 @@
       
       // Create sky contrails overlay using GridHelper.
       function createSkyContrails() {
+        // Create a GridHelper with white lines
         const grid = new THREE.GridHelper(10000, 100, 0xffffff, 0xffffff);
         grid.position.y = 3000; // high up
         grid.material.opacity = 0.1;
         grid.material.transparent = true;
+        // Rotate it so it is horizontal.
         grid.rotation.x = Math.PI / 2;
         scene.add(grid);
       }
@@ -241,7 +247,7 @@
       init();
       createUFOs();
       createSkyContrails();
-      setupJoysticks();
+      setupMobileControls();
       requestAnimationFrame(animate);
       
       function init() {
@@ -282,6 +288,7 @@
         scene.add(plane);
       
         // Create landing pad (runway) at ground level.
+        // Positioned at z = 1500.
         landingPad = new THREE.Mesh(
           new THREE.PlaneGeometry(1000, 100),
           new THREE.MeshBasicMaterial({ map: createRunwayTexture(), side: THREE.DoubleSide })
@@ -396,36 +403,25 @@
         }
       }
       
-      // Update flight controls using both keyboard and joystick input.
       function updateFlight(delta) {
-        // Joystick input for pitch and yaw (left joystick)
-        let joystickPitch = joystickLeft.y;  // Upward movement increases pitch
-        let joystickYaw = joystickLeft.x;
-      
-        // Keyboard fallback for pitch/yaw
-        let keyboardPitch = 0;
-        if (keysPressed["ArrowUp"]) keyboardPitch += 1;
-        if (keysPressed["ArrowDown"]) keyboardPitch -= 1;
-        let keyboardYaw = 0;
-        if (keysPressed["ArrowLeft"]) keyboardYaw += 1;
-        if (keysPressed["ArrowRight"]) keyboardYaw -= 1;
-      
-        // Combine inputs
-        let totalPitch = keyboardPitch + joystickPitch;
-        let totalYaw = keyboardYaw + joystickYaw;
-      
-        pitchAngle += totalPitch * pitchSpeed * delta;
-        yawAngle   += totalYaw * yawSpeed * delta;
-      
-        // Throttle control using right joystick (vertical axis) plus keyboard W/S
-        let keyboardThrottle = 0;
-        if (keysPressed["KeyW"]) keyboardThrottle += 1;
-        if (keysPressed["KeyS"]) keyboardThrottle -= 1;
-        let throttleInput = keyboardThrottle + joystickRight.y;  // Up on joystick accelerates
-      
-        speed = Math.min(Math.max(speed + throttleInput * acceleration * delta, minSpeed), maxSpeed);
-      
-        // Update plane orientation and position.
+        if (keysPressed["KeyW"]) {
+          speed = Math.min(speed + acceleration * delta, maxSpeed);
+        }
+        if (keysPressed["KeyS"]) {
+          speed = Math.max(speed - acceleration * delta, minSpeed);
+        }
+        if (keysPressed["ArrowUp"]) {
+          pitchAngle += pitchSpeed * delta;
+        }
+        if (keysPressed["ArrowDown"]) {
+          pitchAngle -= pitchSpeed * delta;
+        }
+        if (keysPressed["ArrowLeft"]) {
+          yawAngle += yawSpeed * delta;
+        }
+        if (keysPressed["ArrowRight"]) {
+          yawAngle -= yawSpeed * delta;
+        }
         let qPitch = new THREE.Quaternion();
         qPitch.setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchAngle);
         let qYaw = new THREE.Quaternion();
@@ -477,7 +473,7 @@
         }
       }
       
-      // Landing detection.
+      // Landing detection using horizontal distance.
       function checkLanding() {
         let landingCenter = new THREE.Vector2(landingPad.position.x, landingPad.position.z);
         let planePos2D = new THREE.Vector2(plane.position.x, plane.position.z);
@@ -493,11 +489,15 @@
       
       // Check collision with skyscrapers.
       function checkSkyscraperCollisions() {
+        // Buildings are 200x1200x200; half extents: 100, 600, 100; add small margin.
+        const margin = 5;
+        // Skyscraper 1 at (-300,600,1500)
         if (Math.abs(plane.position.x - (-300)) < 105 &&
             Math.abs(plane.position.z - 1500) < 105 &&
             plane.position.y < 1200) {
           triggerWasted("Hit a skyscraper!");
         }
+        // Skyscraper 2 at (300,600,1700)
         if (Math.abs(plane.position.x - 300) < 105 &&
             Math.abs(plane.position.z - 1700) < 105 &&
             plane.position.y < 1200) {
@@ -505,16 +505,19 @@
         }
       }
       
-      // Update UFOs.
+      // Update UFOs: move them and add glitchy color changes.
       function updateUFOs(delta) {
         ufos.forEach(ufo => {
+          // Update position based on velocity.
           ufo.position.add(ufo.userData.velocity.clone().multiplyScalar(delta * 50));
+          // Wrap around if out of range.
           if (ufo.position.x > 5000) ufo.position.x = -5000;
           if (ufo.position.x < -5000) ufo.position.x = 5000;
           if (ufo.position.y > 3000) ufo.position.y = 100;
           if (ufo.position.y < 100) ufo.position.y = 3000;
           if (ufo.position.z > 5000) ufo.position.z = -5000;
           if (ufo.position.z < -5000) ufo.position.z = 5000;
+          // With a low probability, change color to a random glitch color.
           if (Math.random() < 0.05) {
             ufo.material.color.setHex(Math.random() * 0xffffff);
           }
@@ -578,82 +581,37 @@
       function keyDownHandler(e) { keysPressed[e.code] = true; }
       function keyUpHandler(e) { keysPressed[e.code] = false; }
       
-      // --- Touch Joystick Setup ---
-      function setupJoysticks() {
-        setupJoystick("joystickLeft", joystickLeft, false);
-        setupJoystick("joystickRight", joystickRight, true);
+      // --- Mobile Controls Setup ---
+      function setupMobileControls() {
+        const upBtn = document.getElementById("upBtn");
+        const downBtn = document.getElementById("downBtn");
+        const leftBtn = document.getElementById("leftBtn");
+        const rightBtn = document.getElementById("rightBtn");
+        const accelerateBtn = document.getElementById("accelerateBtn");
+        const decelerateBtn = document.getElementById("decelerateBtn");
+
+        // Helper to add both touch and mouse events
+        function addControlEvents(button, key) {
+          button.addEventListener("touchstart", (e) => { e.preventDefault(); keysPressed[key] = true; });
+          button.addEventListener("touchend", (e) => { e.preventDefault(); keysPressed[key] = false; });
+          button.addEventListener("mousedown", (e) => { e.preventDefault(); keysPressed[key] = true; });
+          button.addEventListener("mouseup", (e) => { e.preventDefault(); keysPressed[key] = false; });
+          // Also cancel if touch/mouse leaves the button
+          button.addEventListener("mouseleave", (e) => { e.preventDefault(); keysPressed[key] = false; });
+        }
+        
+        addControlEvents(upBtn, "ArrowUp");
+        addControlEvents(downBtn, "ArrowDown");
+        addControlEvents(leftBtn, "ArrowLeft");
+        addControlEvents(rightBtn, "ArrowRight");
+        addControlEvents(accelerateBtn, "KeyW");
+        addControlEvents(decelerateBtn, "KeyS");
       }
       
-      // Sets up a joystick for a given container.
-      // If isVerticalOnly is true, only the vertical axis is used.
-      function setupJoystick(joystickId, joystickObj, isVerticalOnly) {
-        const container = document.getElementById(joystickId);
-        const thumb = container.querySelector('.joystick-thumb');
-        let maxRadius = container.clientWidth / 2;
-        
-        function updateJoystick(clientX, clientY) {
-          let rect = container.getBoundingClientRect();
-          let centerX = rect.left + rect.width / 2;
-          let centerY = rect.top + rect.height / 2;
-          let dx = clientX - centerX;
-          let dy = clientY - centerY;
-          let distance = Math.sqrt(dx * dx + dy * dy);
-          if (distance > maxRadius) {
-            let angle = Math.atan2(dy, dx);
-            dx = Math.cos(angle) * maxRadius;
-            dy = Math.sin(angle) * maxRadius;
-          }
-          thumb.style.transform = `translate(${dx}px, ${dy}px)`;
-          let normX = dx / maxRadius;
-          let normY = dy / maxRadius;
-          if (isVerticalOnly) {
-            // Invert vertical so that upward movement gives positive throttle.
-            joystickObj.y = -normY;
-          } else {
-            joystickObj.x = normX;
-            joystickObj.y = -normY;
-          }
-        }
-        
-        function resetJoystick() {
-          joystickObj.x = 0;
-          joystickObj.y = 0;
-          thumb.style.transform = 'translate(0px, 0px)';
-        }
-        
-        // Touch events
-        container.addEventListener("touchstart", (e) => {
-          e.preventDefault();
-          const touch = e.changedTouches[0];
-          updateJoystick(touch.clientX, touch.clientY);
-        });
-        container.addEventListener("touchmove", (e) => {
-          e.preventDefault();
-          const touch = e.changedTouches[0];
-          updateJoystick(touch.clientX, touch.clientY);
-        });
-        container.addEventListener("touchend", (e) => {
-          e.preventDefault();
-          resetJoystick();
-        });
-        
-        // Mouse events
-        let mouseDown = false;
-        container.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          mouseDown = true;
-          updateJoystick(e.clientX, e.clientY);
-        });
-        window.addEventListener("mousemove", (e) => {
-          if (!mouseDown) return;
-          updateJoystick(e.clientX, e.clientY);
-        });
-        window.addEventListener("mouseup", (e) => {
-          if (!mouseDown) return;
-          mouseDown = false;
-          resetJoystick();
-        });
-      }
+      // Optional: Remove duplicate init() if not needed.
+      // document.getElementById("copyBtn").addEventListener("click", function() {
+      //   copyToClipboard(formatPhoneNumber(phoneNumber));
+      // });
     </script>
   </body>
 </html>
