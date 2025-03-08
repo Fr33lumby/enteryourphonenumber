@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Dynamic Flight Sim Phone Input – UFO & Contrails Edition</title>
+    <style>
+      body { margin: 0; overflow: hidden; }
+      canvas { display: block; }
+      #hud {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        padding: 10px;
+        background: rgba(0,0,0,0.7);
+        color: #fff;
+        font-family: monospace;
+        font-size: 16px;
+        z-index: 100;
+      }
+      #wastedScreen {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(0,0,0,0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        color: red;
+        font-size: 100px;
+        font-family: sans-serif;
+        letter-spacing: 5px;
+        z-index: 9999;
+        opacity: 0;
+        transition: opacity 0.5s ease;
+      }
+      #wastedScreen.visible { opacity: 1; }
+      /* Drop-Off Overlay */
+      #dropOffOverlay {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(0,0,0,0.9);
+        z-index: 200;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      #dropOffOverlay div {
+        color: #fff;
+        font-size: 20px;
+        margin-bottom: 20px;
+      }
+      #dropOffOverlay input {
+        font-size: 18px;
+        padding: 8px;
+        width: 300px;
+        text-align: center;
+        margin-bottom: 20px;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hud"></div>
+    <div id="wastedScreen">WASTED</div>
+    <!-- Drop-Off Overlay -->
+    <div id="dropOffOverlay">
+      <div id="dropOffText">Your Number:</div>
+      <input type="text" id="dropOffInput" readonly />
+    </div>
+    <!-- Include Three.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Include FontLoader and TextGeometry -->
+    <script src="https://threejs.org/examples/jsm/loaders/FontLoader.js"></script>
+    <script src="https://threejs.org/examples/jsm/geometries/TextGeometry.js"></script>
+    <script>
+      /* --- Global Variables --- */
+      let scene, camera, renderer;
+      let plane, ground, landingPad;
+      let digitTargets = [];
+      let phoneNumber = "";
+      const maxDigits = 10;
+      const numTargets = 500;
+      const fixedTargetValues = ["0","1","2","3","4","5","6","7","8","9","DEL"];
+      
+      // UFO variables
+      let ufos = [];
+      
+      // Flight control variables (using pitch and yaw)
+      let pitchAngle = 0, yawAngle = 0;
+      let speed = 1.0, maxSpeed = 4000.0, minSpeed = 0.1, acceleration = 0.5;
+      const pitchSpeed = 0.07, yawSpeed = 0.07;
+      let oldTime = 0;
+      const keysPressed = {};
+      
+      // Flags for landing and freezing flight
+      let landingTriggered = false;
+      let flightFrozen = false;
+      
+      // Font variable
+      let font = null;
+      
+      // Helper: Generate random digit string
+      function generateRandomNumberString(minLen, maxLen) {
+        const len = Math.floor(Math.random() * (maxLen - minLen + 1)) + minLen;
+        let str = "";
+        for (let i = 0; i < len; i++) {
+          str += Math.floor(Math.random() * 10);
+        }
+        return str;
+      }
+      
+      // Create runway texture: grey with white dashed center line
+      function createRunwayTexture() {
+        const width = 1000, height = 100;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = "#666666";
+        ctx.fillRect(0, 0, width, height);
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 4;
+        ctx.setLineDash([40, 30]);
+        ctx.beginPath();
+        ctx.moveTo(0, height / 2);
+        ctx.lineTo(width, height / 2);
+        ctx.stroke();
+        return new THREE.CanvasTexture(canvas);
+      }
+      
+      // Create ground texture: striped green
+      function createStripedTexture() {
+        const size = 512;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const context = canvas.getContext('2d');
+        context.fillStyle = "#33aa33";
+        context.fillRect(0, 0, size, size);
+        context.fillStyle = "#ffffff";
+        const stripeHeight = 30;
+        for (let y = 0; y < size; y += stripeHeight * 2) {
+          context.fillRect(0, y, size, stripeHeight);
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(100, 100);
+        return texture;
+      }
+      
+      // Create UFO triangle geometry by extruding a triangle shape.
+      function createUFOGeometry() {
+        const shape = new THREE.Shape();
+        shape.moveTo(0, 0);
+        shape.lineTo(30, 0);
+        shape.lineTo(15, 25);
+        shape.lineTo(0, 0);
+        const extrudeSettings = { depth: 5, bevelEnabled: false };
+        return new THREE.ExtrudeGeometry(shape, extrudeSettings);
+      }
+      
+      // Create UFOs
+      function createUFOs() {
+        const ufoGeom = createUFOGeometry();
+        for (let i = 0; i < 10; i++) {
+          const material = new THREE.MeshPhongMaterial({ color: 0x00ff00, emissive: 0x003300 });
+          const ufo = new THREE.Mesh(ufoGeom, material);
+          ufo.position.set(
+            THREE.MathUtils.randFloatSpread(10000),
+            THREE.MathUtils.randFloat(100, 1000),
+            THREE.MathUtils.randFloatSpread(10000)
+          );
+          // Assign random velocity stored in userData
+          ufo.userData.velocity = new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(2),
+            THREE.MathUtils.randFloatSpread(2),
+            THREE.MathUtils.randFloatSpread(2)
+          );
+          ufos.push(ufo);
+          scene.add(ufo);
+        }
+      }
+      
+      // Create sky contrails overlay using GridHelper.
+      function createSkyContrails() {
+        // Create a GridHelper with white lines
+        const grid = new THREE.GridHelper(10000, 100, 0xffffff, 0xffffff);
+        grid.position.y = 3000; // high up
+        grid.material.opacity = 0.1;
+        grid.material.transparent = true;
+        // Rotate it so it is horizontal.
+        grid.rotation.x = Math.PI / 2;
+        scene.add(grid);
+      }
+      
+      // Load font
+      const fontLoader = new THREE.FontLoader();
+      fontLoader.load("https://threejs.org/examples/fonts/helvetiker_regular.typeface.json", function(loadedFont) {
+        font = loadedFont;
+        createDigitTargets();
+      });
+      
+      init();
+      createUFOs();
+      createSkyContrails();
+      requestAnimationFrame(animate);
+      
+      function init() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb);
+      
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 3000);
+        camera.position.set(0, 150, 800);
+      
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+      
+        // Create airplane.
+        plane = new THREE.Group();
+        const fuselageGeom = new THREE.BoxGeometry(0.3, 0.3, 3);
+        const fuselageMat = new THREE.MeshPhongMaterial({ color: 0x999999 });
+        const fuselage = new THREE.Mesh(fuselageGeom, fuselageMat);
+        plane.add(fuselage);
+      
+        const wingGeom = new THREE.BoxGeometry(4, 0.1, 0.5);
+        const wingMat = new THREE.MeshPhongMaterial({ color: 0x666666 });
+        const wing = new THREE.Mesh(wingGeom, wingMat);
+        wing.position.y = 0;
+        plane.add(wing);
+      
+        const tailHGeom = new THREE.BoxGeometry(1, 0.1, 0.3);
+        const tailH = new THREE.Mesh(tailHGeom, wingMat);
+        tailH.position.set(0, 0.2, -1.4);
+        plane.add(tailH);
+      
+        const tailVGeom = new THREE.BoxGeometry(0.1, 0.5, 0.3);
+        const tailV = new THREE.Mesh(tailVGeom, wingMat);
+        tailV.position.set(0, 0.25, -1.4);
+        plane.add(tailV);
+      
+        plane.position.set(0, 150, 800);
+        scene.add(plane);
+      
+        // Create landing pad (runway) at ground level.
+        // Positioned at z = 1500.
+        landingPad = new THREE.Mesh(
+          new THREE.PlaneGeometry(1000, 100),
+          new THREE.MeshBasicMaterial({ map: createRunwayTexture(), side: THREE.DoubleSide })
+        );
+        landingPad.rotation.x = -Math.PI / 2;
+        landingPad.position.set(0, 0.11, 1500);
+        scene.add(landingPad);
+      
+        // Add two skyscrapers.
+        const buildingGeom = new THREE.BoxGeometry(200, 1200, 200);
+        const buildingMat = new THREE.MeshPhongMaterial({ color: 0x888888 });
+        const skyscraper1 = new THREE.Mesh(buildingGeom, buildingMat);
+        skyscraper1.position.set(-300, 600, 1500);
+        scene.add(skyscraper1);
+        const skyscraper2 = new THREE.Mesh(buildingGeom, buildingMat);
+        skyscraper2.position.set(300, 600, 1700);
+        scene.add(skyscraper2);
+      
+        // Create ground.
+        ground = new THREE.Mesh(
+          new THREE.PlaneGeometry(10000, 10000),
+          new THREE.MeshPhongMaterial({ map: createStripedTexture() })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        scene.add(ground);
+      
+        // Lighting.
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(50, 100, 50);
+        scene.add(directionalLight);
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+      
+        window.addEventListener("resize", onWindowResize, false);
+        document.addEventListener("keydown", keyDownHandler);
+        document.addEventListener("keyup", keyUpHandler);
+      }
+      
+      function createDigitTargets() {
+        if (!font) return;
+        for (let i = 0; i < numTargets; i++) {
+          let useRandom = Math.random() < 0.5;
+          let val = useRandom ? generateRandomNumberString(3, 5)
+                              : fixedTargetValues[Math.floor(Math.random() * fixedTargetValues.length)];
+          let material;
+          if (val === "DEL") {
+            material = new THREE.MeshPhongMaterial({ color: 0xff4444 });
+          } else if (val.length > 1) {
+            material = new THREE.MeshPhongMaterial({ color: 0x88ff88 });
+          } else {
+            material = new THREE.MeshPhongMaterial({ color: 0xffffff });
+          }
+          let textGeom = new THREE.TextGeometry(val, {
+            font: font,
+            size: 20,
+            height: 4,
+            curveSegments: 8
+          });
+          textGeom.center();
+          let textMesh = new THREE.Mesh(textGeom, material);
+          textMesh.userData.value = val;
+          repositionTarget(textMesh);
+          scene.add(textMesh);
+          digitTargets.push(textMesh);
+        }
+      }
+      
+      function repositionTarget(target) {
+        let center = plane.position.clone();
+        const minDist = 200, maxDist = 1000;
+        let distance = THREE.MathUtils.randFloat(minDist, maxDist);
+        let theta = THREE.MathUtils.randFloat(0, Math.PI * 2);
+        let phi = THREE.MathUtils.randFloat(0, Math.PI);
+        let offset = new THREE.Vector3(
+          distance * Math.sin(phi) * Math.cos(theta),
+          distance * Math.cos(phi),
+          distance * Math.sin(phi) * Math.sin(theta)
+        );
+        target.position.copy(center.add(offset));
+      }
+      
+      function updateDynamicTargets() {
+        const maxDistance = 1200;
+        for (let i = 0; i < digitTargets.length; i++) {
+          let target = digitTargets[i];
+          if (target.position.distanceTo(plane.position) > maxDistance) {
+            repositionTarget(target);
+          }
+        }
+      }
+      
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+      
+      function animate(time) {
+        const delta = (time - oldTime) / 16.6667;
+        oldTime = time;
+        requestAnimationFrame(animate);
+        if (!flightFrozen) updateFlight(delta);
+        updateDynamicTargets();
+        checkDigitCollisions();
+        checkLanding();
+        checkSkyscraperCollisions();
+        updateUFOs(delta);
+        updateHUD();
+        renderer.render(scene, camera);
+        if (plane.position.y < -10 && !landingTriggered) {
+          triggerWasted("Crashed into the ground!");
+        }
+      }
+      
+      function updateFlight(delta) {
+        if (keysPressed["KeyW"]) {
+          speed = Math.min(speed + acceleration * delta, maxSpeed);
+        }
+        if (keysPressed["KeyS"]) {
+          speed = Math.max(speed - acceleration * delta, minSpeed);
+        }
+        if (keysPressed["ArrowUp"]) {
+          pitchAngle += pitchSpeed * delta;
+        }
+        if (keysPressed["ArrowDown"]) {
+          pitchAngle -= pitchSpeed * delta;
+        }
+        if (keysPressed["ArrowLeft"]) {
+          yawAngle += yawSpeed * delta;
+        }
+        if (keysPressed["ArrowRight"]) {
+          yawAngle -= yawSpeed * delta;
+        }
+        let qPitch = new THREE.Quaternion();
+        qPitch.setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchAngle);
+        let qYaw = new THREE.Quaternion();
+        qYaw.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawAngle);
+        plane.quaternion.copy(qYaw.multiply(qPitch));
+        let forward = new THREE.Vector3(0, 0, 1);
+        forward.applyQuaternion(plane.quaternion);
+        plane.position.add(forward.multiplyScalar(speed * delta));
+        let localCamOffset = new THREE.Vector3(0, 5, -20);
+        localCamOffset.applyQuaternion(plane.quaternion);
+        let desiredCameraPos = plane.position.clone().add(localCamOffset);
+        camera.position.lerp(desiredCameraPos, 0.1);
+        camera.lookAt(plane.position);
+      }
+      
+      function checkDigitCollisions() {
+        const targetRadius = 12;
+        for (let i = 0; i < digitTargets.length; i++) {
+          let target = digitTargets[i];
+          let dist = target.position.distanceTo(plane.position);
+          if (dist < targetRadius + 2) {
+            processDigitCollision(target);
+            resetAllDigitTargets();
+            break;
+          }
+        }
+      }
+      
+      function processDigitCollision(target) {
+        let val = target.userData.value;
+        if (val === "DEL") {
+          phoneNumber = phoneNumber.slice(0, -1);
+        } else {
+          if (val.length > 1) {
+            if (phoneNumber.length + val.length <= maxDigits) {
+              phoneNumber += val;
+            }
+          } else {
+            if (phoneNumber.length < maxDigits) {
+              phoneNumber += val;
+            }
+          }
+        }
+      }
+      
+      function resetAllDigitTargets() {
+        for (let i = 0; i < digitTargets.length; i++) {
+          repositionTarget(digitTargets[i]);
+        }
+      }
+      
+      // Landing detection using horizontal distance.
+      function checkLanding() {
+        let landingCenter = new THREE.Vector2(landingPad.position.x, landingPad.position.z);
+        let planePos2D = new THREE.Vector2(plane.position.x, plane.position.z);
+        let horizDist = landingCenter.distanceTo(planePos2D);
+        if (!landingTriggered && horizDist < 300 && plane.position.y < 40) {
+          landingTriggered = true;
+          flightFrozen = true;
+          const overlay = document.getElementById("dropOffOverlay");
+          document.getElementById("dropOffInput").value = formatPhoneNumber(phoneNumber);
+          overlay.style.display = "flex";
+        }
+      }
+      
+      // Check collision with skyscrapers.
+      function checkSkyscraperCollisions() {
+        // Buildings are 200x1200x200; half extents: 100, 600, 100; add small margin.
+        const margin = 5;
+        // Skyscraper 1 at (-300,600,1500)
+        if (Math.abs(plane.position.x - (-300)) < 105 &&
+            Math.abs(plane.position.z - 1500) < 105 &&
+            plane.position.y < 1200) {
+          triggerWasted("Hit a skyscraper!");
+        }
+        // Skyscraper 2 at (300,600,1700)
+        if (Math.abs(plane.position.x - 300) < 105 &&
+            Math.abs(plane.position.z - 1700) < 105 &&
+            plane.position.y < 1200) {
+          triggerWasted("Hit a skyscraper!");
+        }
+      }
+      
+      // Update UFOs: move them and add glitchy color changes.
+      function updateUFOs(delta) {
+        ufos.forEach(ufo => {
+          // Update position based on velocity.
+          ufo.position.add(ufo.userData.velocity.clone().multiplyScalar(delta * 50));
+          // Wrap around if out of range.
+          if (ufo.position.x > 5000) ufo.position.x = -5000;
+          if (ufo.position.x < -5000) ufo.position.x = 5000;
+          if (ufo.position.y > 3000) ufo.position.y = 100;
+          if (ufo.position.y < 100) ufo.position.y = 3000;
+          if (ufo.position.z > 5000) ufo.position.z = -5000;
+          if (ufo.position.z < -5000) ufo.position.z = 5000;
+          // With a low probability, change color to a random glitch color.
+          if (Math.random() < 0.05) {
+            ufo.material.color.setHex(Math.random() * 0xffffff);
+          }
+        });
+      }
+      
+      function copyToClipboard(text) {
+        const tempInput = document.createElement("input");
+        document.body.appendChild(tempInput);
+        tempInput.value = text;
+        tempInput.select();
+        try {
+          document.execCommand("copy");
+          alert("Copied to clipboard!");
+        } catch (err) {
+          alert("Failed to copy text: " + err);
+        }
+        document.body.removeChild(tempInput);
+      }
+      
+      function updateHUD() {
+        let altitude = plane.position.y.toFixed(1);
+        let currentSpeed = speed.toFixed(2);
+        let forward = new THREE.Vector3(0, 0, 1);
+        forward.applyQuaternion(plane.quaternion);
+        forward.y = 0;
+        forward.normalize();
+        let headingDeg = THREE.MathUtils.radToDeg(Math.atan2(forward.x, forward.z)).toFixed(1);
+        let formattedNumber = formatPhoneNumber(phoneNumber);
+        const hud = document.getElementById("hud");
+        hud.innerHTML = `
+          <strong>Flight Info</strong><br>
+          Speed: ${currentSpeed}<br>
+          Altitude: ${altitude}<br>
+          Heading: ${headingDeg}&deg;<br><br>
+          <strong>Phone Number Input</strong><br>
+          ${formattedNumber}
+        `;
+      }
+      
+      function formatPhoneNumber(numStr) {
+        let result = "+43 ";
+        for (let i = 0; i < numStr.length; i++) {
+          result += numStr[i];
+          if (i === 2 || i === 5 || i === 8) {
+            result += " ";
+          }
+        }
+        return result;
+      }
+      
+      function triggerWasted(reason) {
+        console.log(reason);
+        const wastedScreen = document.getElementById("wastedScreen");
+        wastedScreen.classList.add("visible");
+        document.removeEventListener("keydown", keyDownHandler);
+        document.removeEventListener("keyup", keyUpHandler);
+        setTimeout(() => { location.reload(); }, 3000);
+      }
+      
+      function keyDownHandler(e) { keysPressed[e.code] = true; }
+      function keyUpHandler(e) { keysPressed[e.code] = false; }
+      
+      document.getElementById("copyBtn").addEventListener("click", function() {
+        copyToClipboard(formatPhoneNumber(phoneNumber));
+      });
+      
+      init();
+    </script>
+  </body>
+</html>
