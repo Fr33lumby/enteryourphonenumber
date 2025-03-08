@@ -4,18 +4,18 @@
     <meta charset="UTF-8" />
     <!-- Mobile/iOS viewport -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Flight Simulator – Gyro & Joystick Controls</title>
+    <title>Flight Simulator – Gyro & Dynamic Joystick Controls</title>
     <style>
       html, body {
         margin: 0;
         padding: 0;
         overflow: hidden;
-        /* Prevent text selection and callout on iOS */
+        /* Disable text selection and iOS callouts */
         -webkit-user-select: none;
         -webkit-touch-callout: none;
         user-select: none;
       }
-      /* The Three.js canvas fills the screen in the background */
+      /* Three.js canvas in the background */
       canvas {
         display: block;
         position: fixed;
@@ -29,7 +29,7 @@
         top: 10px;
         left: 10px;
         padding: 10px;
-        background: rgba(0, 0, 0, 0.7);
+        background: rgba(0,0,0,0.7);
         color: #fff;
         font-family: monospace;
         font-size: 16px;
@@ -39,7 +39,7 @@
       .control-button {
         position: fixed;
         padding: 10px 20px;
-        background: rgba(255, 255, 255, 0.3); /* transparent */
+        background: rgba(255,255,255,0.3); /* transparent */
         border: none;
         border-radius: 5px;
         font-size: 18px;
@@ -49,19 +49,19 @@
       #accelerateBtn { left: 20px; bottom: 20px; }
       #decelerateBtn { left: 160px; bottom: 20px; }
       #enableTiltBtn { right: 20px; top: 20px; }
-      /* Joystick zones (nipplejs will render inside these) */
-      #joystickLeft, #joystickRight {
+      /* Joystick zones – these zones just define areas where a dynamic joystick can be created */
+      #joystickLeftZone, #joystickRightZone {
         position: fixed;
         bottom: 100px;
-        width: 120px;
-        height: 120px;
-        border: 2px solid rgba(255,255,255,0.7);
+        width: 150px;
+        height: 150px;
+        border: 2px dashed rgba(255,255,255,0.3);
         border-radius: 50%;
         touch-action: none;
         z-index: 110;
       }
-      #joystickLeft { left: 20px; }
-      #joystickRight { right: 20px; }
+      #joystickLeftZone { left: 20px; }
+      #joystickRightZone { right: 20px; }
     </style>
   </head>
   <body>
@@ -69,14 +69,14 @@
     <button id="accelerateBtn" class="control-button">Accelerate</button>
     <button id="decelerateBtn" class="control-button">Decelerate</button>
     <button id="enableTiltBtn" class="control-button">Enable Tilt</button>
-    <div id="joystickLeft"></div>
-    <div id="joystickRight"></div>
+    <div id="joystickLeftZone"></div>
+    <div id="joystickRightZone"></div>
     
-    <!-- Include Three.js and its modules -->
+    <!-- Include Three.js and modules -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://threejs.org/examples/jsm/loaders/FontLoader.js"></script>
     <script src="https://threejs.org/examples/jsm/geometries/TextGeometry.js"></script>
-    <!-- Include nipplejs from CDN -->
+    <!-- Include nipplejs (using dynamic mode) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.7.3/nipplejs.min.js"></script>
     
     <script>
@@ -96,15 +96,15 @@
       let oldTime = 0;
       const keysPressed = {};
       
-      // Device orientation (gyro) values (inverted)
+      // Gyro values (inverted so that tilting up increases pitch)
       let tiltPitch = 0, tiltYaw = 0;
-      // Throttle input from buttons
+      // Throttle input from buttons and right joystick
       let throttleInput = 0;
       let flightFrozen = false, landingTriggered = false;
       
       let font = null;
       
-      // Global joystick input objects (nipplejs values: -1 to 1)
+      // Global joystick inputs from nipplejs (values range from -1 to 1)
       let joystickInputLeft = { x: 0, y: 0 };
       let joystickInputRight = { y: 0 };
       
@@ -361,7 +361,7 @@
         if (keysPressed["KeyS"]) keyboardThrottle -= 1;
       
         // Combine gyro, keyboard, and joystick inputs.
-        // Invert gyro inputs so that tilting up increases pitch.
+        // Invert gyro so tilting up increases pitch.
         let totalPitch = keyboardPitch + (-tiltPitch) + joystickInputLeft.y;
         let totalYaw = keyboardYaw + (-tiltYaw) + joystickInputLeft.x;
         let totalThrottle = keyboardThrottle + throttleInput + joystickInputRight.y;
@@ -538,10 +538,10 @@
       });
       
       function handleDeviceOrientation(event) {
-        // Invert beta and gamma so that tilting up (beta) increases pitch and tilting right (gamma) increases yaw.
+        // Invert beta and gamma so that tilting up increases pitch and tilting right increases yaw.
         tiltPitch = THREE.MathUtils.clamp(-event.beta / 45, -1, 1);
         tiltYaw = THREE.MathUtils.clamp(-event.gamma / 45, -1, 1);
-        // Uncomment for debugging:
+        // Uncomment to debug:
         // console.log("Tilt:", tiltPitch.toFixed(2), tiltYaw.toFixed(2));
       }
       
@@ -559,24 +559,25 @@
         throttleInput = 0;
       });
       
-      /*********** Nipplejs Joystick Setup ***********/
+      /*********** Nipplejs Dynamic Joystick Setup ***********/
       function setupJoysticks() {
+        // Use dynamic mode so that the joystick appears at the touch location within the zone.
         // Left joystick for additional pitch/yaw control.
-        const leftZone = document.getElementById("joystickLeft");
+        const leftZone = document.getElementById("joystickLeftZone");
         const joystickL = nipplejs.create({
           zone: leftZone,
-          mode: "static",
-          position: { left: "50%", top: "50%" },
+          mode: "dynamic",
           color: "blue",
-          size: 120
+          size: 120,
+          threshold: 0.1
         });
         joystickL.on("move", (evt, data) => {
           if (data && data.vector) {
-            // Add joystick input to control.
+            // Here, we add dynamic joystick input to the gyro input.
+            // You may adjust the weighting if desired.
             joystickInputLeft.x = data.vector.x;
             joystickInputLeft.y = data.vector.y;
-            // Uncomment to debug:
-            // console.log("Left joystick:", joystickInputLeft);
+            // Debug: console.log("Left joystick:", joystickInputLeft);
           }
         });
         joystickL.on("end", () => {
@@ -585,20 +586,19 @@
         });
       
         // Right joystick for additional throttle control (vertical axis only).
-        const rightZone = document.getElementById("joystickRight");
+        const rightZone = document.getElementById("joystickRightZone");
         const joystickR = nipplejs.create({
           zone: rightZone,
-          mode: "static",
-          position: { left: "50%", top: "50%" },
+          mode: "dynamic",
           color: "red",
-          size: 120
+          size: 120,
+          threshold: 0.1
         });
         joystickR.on("move", (evt, data) => {
           if (data && data.vector) {
             // Use only the vertical component for throttle.
             joystickInputRight.y = data.vector.y;
-            // Uncomment to debug:
-            // console.log("Right joystick:", joystickInputRight);
+            // Debug: console.log("Right joystick:", joystickInputRight);
           }
         });
         joystickR.on("end", () => {
