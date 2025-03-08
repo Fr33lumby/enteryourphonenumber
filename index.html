@@ -7,7 +7,7 @@
     <title>Dynamic Flight Sim Phone Input – UFO & Contrails Edition</title>
     <style>
       body { margin: 0; overflow: hidden; }
-      /* Ensure the canvas is fixed in the background */
+      /* Ensure the canvas stays in the background */
       canvas { 
         display: block; 
         position: fixed; 
@@ -130,8 +130,8 @@
       
       // Flight control variables (using pitch and yaw)
       let pitchAngle = 0, yawAngle = 0;
-      let speed = 1.0, maxSpeed = 4000.0, minSpeed = 0.1, acceleration = 0.1;
-      const pitchSpeed = 0.03, yawSpeed = 0.03;
+      let speed = 1.0, maxSpeed = 4000.0, minSpeed = 0.1, acceleration = 0.5;
+      const pitchSpeed = 0.07, yawSpeed = 0.07;
       let oldTime = 0;
       const keysPressed = {};
       
@@ -585,18 +585,18 @@
       function keyDownHandler(e) { keysPressed[e.code] = true; }
       function keyUpHandler(e) { keysPressed[e.code] = false; }
       
-      // --- Touch Joystick Setup ---
+      // --- Pointer-based Joystick Setup ---
       function setupJoysticks() {
         setupJoystick("joystickLeft", joystickLeft, false);
         setupJoystick("joystickRight", joystickRight, true);
       }
       
-      // Sets up a joystick for a given container.
-      // If isVerticalOnly is true, only the vertical axis is used.
+      // Uses pointer events for a unified input system.
       function setupJoystick(joystickId, joystickObj, isVerticalOnly) {
         const container = document.getElementById(joystickId);
         const thumb = container.querySelector('.joystick-thumb');
         let maxRadius = container.clientWidth / 2;
+        let active = false;
         
         function updateJoystick(clientX, clientY) {
           let rect = container.getBoundingClientRect();
@@ -614,7 +614,6 @@
           let normX = dx / maxRadius;
           let normY = dy / maxRadius;
           if (isVerticalOnly) {
-            // Invert vertical so that upward movement gives positive throttle.
             joystickObj.y = -normY;
           } else {
             joystickObj.x = normX;
@@ -628,37 +627,25 @@
           thumb.style.transform = 'translate(0px, 0px)';
         }
         
-        // Touch events with passive: false
-        container.addEventListener("touchstart", (e) => {
+        container.addEventListener('pointerdown', (e) => {
           e.preventDefault();
-          const touch = e.touches[0];
-          updateJoystick(touch.clientX, touch.clientY);
-        }, { passive: false });
-        container.addEventListener("touchmove", (e) => {
-          e.preventDefault();
-          const touch = e.touches[0];
-          updateJoystick(touch.clientX, touch.clientY);
-        }, { passive: false });
-        container.addEventListener("touchend", (e) => {
-          e.preventDefault();
-          resetJoystick();
-        }, { passive: false });
-        
-        // Mouse events
-        let mouseDown = false;
-        container.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          mouseDown = true;
+          active = true;
+          updateJoystick(e.clientX, e.clientY);
+          container.setPointerCapture(e.pointerId);
+        });
+        container.addEventListener('pointermove', (e) => {
+          if (!active) return;
           updateJoystick(e.clientX, e.clientY);
         });
-        window.addEventListener("mousemove", (e) => {
-          if (!mouseDown) return;
-          updateJoystick(e.clientX, e.clientY);
-        });
-        window.addEventListener("mouseup", (e) => {
-          if (!mouseDown) return;
-          mouseDown = false;
+        container.addEventListener('pointerup', (e) => {
+          active = false;
           resetJoystick();
+          container.releasePointerCapture(e.pointerId);
+        });
+        container.addEventListener('pointercancel', (e) => {
+          active = false;
+          resetJoystick();
+          container.releasePointerCapture(e.pointerId);
         });
       }
     </script>
