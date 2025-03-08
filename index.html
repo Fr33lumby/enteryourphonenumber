@@ -2,20 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- Ensure proper scaling on mobile/iOS -->
+    <!-- Mobile/iOS viewport -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Flight Sim with iOS Touch & Tilt Controls</title>
+    <title>Flight Simulator – Gyro & Joystick Controls</title>
     <style>
       html, body {
         margin: 0;
         padding: 0;
         overflow: hidden;
-        /* Prevent text selection and iOS callouts */
+        /* Disable text selection and iOS callouts */
         -webkit-user-select: none;
         -webkit-touch-callout: none;
         user-select: none;
       }
-      /* The Three.js canvas stays in the background */
+      /* The Three.js canvas fills the screen and stays behind UI elements */
       canvas {
         display: block;
         position: fixed;
@@ -23,19 +23,19 @@
         left: 0;
         z-index: 0;
       }
-      /* HUD to display flight info */
+      /* HUD for flight info */
       #hud {
         position: fixed;
         top: 10px;
         left: 10px;
         padding: 10px;
-        background: rgba(0,0,0,0.7);
+        background: rgba(0, 0, 0, 0.7);
         color: #fff;
         font-family: monospace;
         font-size: 16px;
         z-index: 100;
       }
-      /* Throttle control buttons */
+      /* Buttons for enabling tilt and throttle control */
       .control-button {
         position: fixed;
         bottom: 20px;
@@ -46,20 +46,22 @@
         font-size: 18px;
         z-index: 150;
       }
-      #accelerateBtn { left: 50%; transform: translateX(-110%); }
-      #decelerateBtn { left: 50%; transform: translateX(10%); }
-      /* Button to enable device tilt controls (iOS 13+ require permission) */
-      #enableTiltBtn {
+      #accelerateBtn { left: 20px; }
+      #decelerateBtn { left: 150px; }
+      #enableTiltBtn { right: 20px; top: 20px; }
+      /* Joystick zones (nipplejs will render inside these) */
+      #joystickLeft, #joystickRight {
         position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 10px 20px;
-        background: rgba(255,255,255,0.8);
-        border: none;
-        border-radius: 5px;
-        font-size: 18px;
-        z-index: 150;
+        bottom: 20px;
+        width: 120px;
+        height: 120px;
+        border: 2px solid rgba(255,255,255,0.7);
+        border-radius: 50%;
+        touch-action: none;
+        z-index: 110;
       }
+      #joystickLeft { left: 20px; margin-bottom: 100px; }
+      #joystickRight { right: 20px; margin-bottom: 100px; }
     </style>
   </head>
   <body>
@@ -67,19 +69,26 @@
     <button id="accelerateBtn" class="control-button">Accelerate</button>
     <button id="decelerateBtn" class="control-button">Decelerate</button>
     <button id="enableTiltBtn" class="control-button">Enable Tilt</button>
-    <!-- Include Three.js and its modules -->
+    <!-- Joystick Zones -->
+    <div id="joystickLeft"></div>
+    <div id="joystickRight"></div>
+    
+    <!-- Include Three.js and modules -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://threejs.org/examples/jsm/loaders/FontLoader.js"></script>
     <script src="https://threejs.org/examples/jsm/geometries/TextGeometry.js"></script>
+    <!-- Include nipplejs for joystick support -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.7.3/nipplejs.min.js"></script>
+    
     <script>
-      /**************** Three.js Flight Simulator Setup ****************/
+      /***************** Flight Simulator Variables *****************/
       let scene, camera, renderer;
       let plane, ground, landingPad;
       let digitTargets = [];
       let phoneNumber = "";
       const maxDigits = 10;
       const numTargets = 500;
-      const fixedTargetValues = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "DEL"];
+      const fixedTargetValues = ["0","1","2","3","4","5","6","7","8","9","DEL"];
       
       let ufos = [];
       let pitchAngle = 0, yawAngle = 0;
@@ -88,13 +97,15 @@
       let oldTime = 0;
       const keysPressed = {};
       
-      // We'll use device tilt (beta and gamma) to control pitch and yaw.
+      // Device tilt values (inverted)
       let tiltPitch = 0, tiltYaw = 0;
-      // Throttle input from the on-screen buttons.
+      // Throttle input from buttons and joystick
       let throttleInput = 0;
       let flightFrozen = false, landingTriggered = false;
+      
       let font = null;
       
+      /***************** Helper Functions *****************/
       function generateRandomNumberString(minLen, maxLen) {
         const len = Math.floor(Math.random() * (maxLen - minLen + 1)) + minLen;
         let str = "";
@@ -106,33 +117,33 @@
       
       function createRunwayTexture() {
         const width = 1000, height = 100;
-        const canvas = document.createElement('canvas');
+        const canvas = document.createElement("canvas");
         canvas.width = width;
         canvas.height = height;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext("2d");
         ctx.fillStyle = "#666666";
         ctx.fillRect(0, 0, width, height);
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 4;
         ctx.setLineDash([40, 30]);
         ctx.beginPath();
-        ctx.moveTo(0, height / 2);
-        ctx.lineTo(width, height / 2);
+        ctx.moveTo(0, height/2);
+        ctx.lineTo(width, height/2);
         ctx.stroke();
         return new THREE.CanvasTexture(canvas);
       }
       
       function createStripedTexture() {
         const size = 512;
-        const canvas = document.createElement('canvas');
+        const canvas = document.createElement("canvas");
         canvas.width = size;
         canvas.height = size;
-        const context = canvas.getContext('2d');
+        const context = canvas.getContext("2d");
         context.fillStyle = "#33aa33";
         context.fillRect(0, 0, size, size);
         context.fillStyle = "#ffffff";
         const stripeHeight = 30;
-        for (let y = 0; y < size; y += stripeHeight * 2) {
+        for (let y = 0; y < size; y += stripeHeight*2) {
           context.fillRect(0, y, size, stripeHeight);
         }
         const texture = new THREE.CanvasTexture(canvas);
@@ -190,14 +201,14 @@
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87ceeb);
       
-        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 3000);
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 3000);
         camera.position.set(0, 150, 800);
       
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
       
-        // Create the airplane.
+        // Create airplane.
         plane = new THREE.Group();
         const fuselageGeom = new THREE.BoxGeometry(0.3, 0.3, 3);
         const fuselageMat = new THREE.MeshPhongMaterial({ color: 0x999999 });
@@ -346,9 +357,10 @@
         if (keysPressed["KeyW"]) keyboardThrottle += 1;
         if (keysPressed["KeyS"]) keyboardThrottle -= 1;
       
-        // Combine keyboard input with tilt (from deviceorientation) and throttle button.
-        let totalPitch = keyboardPitch + tiltPitch;
-        let totalYaw = keyboardYaw + tiltYaw;
+        // Combine device orientation (gyro) with keyboard.
+        // Invert the gyro values so that tilting the device up increases pitch (i.e. nose up)
+        let totalPitch = keyboardPitch + (-tiltPitch);
+        let totalYaw = keyboardYaw + (-tiltYaw);
         let totalThrottle = keyboardThrottle + throttleInput;
       
         pitchAngle += totalPitch * pitchSpeed * delta;
@@ -506,8 +518,7 @@
       function keyDownHandler(e) { keysPressed[e.code] = true; }
       function keyUpHandler(e) { keysPressed[e.code] = false; }
       
-      // --- Device Orientation Setup for Tilt Controls ---
-      // Tap the "Enable Tilt" button to request permission (iOS 13+)
+      /***************** Device Orientation (Gyro) Setup *****************/
       document.getElementById("enableTiltBtn").addEventListener("click", function() {
         if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
           DeviceOrientationEvent.requestPermission().then(permissionState => {
@@ -523,13 +534,14 @@
       });
       
       function handleDeviceOrientation(event) {
-        // event.beta (front-to-back tilt) and event.gamma (left-to-right tilt) are in degrees.
-        // We assume ±45° is the full range.
-        tiltPitch = THREE.MathUtils.clamp(event.beta / 45, -1, 1);
-        tiltYaw = THREE.MathUtils.clamp(event.gamma / 45, -1, 1);
+        // Invert the beta and gamma so that tilting up increases pitch and tilting right increases yaw.
+        tiltPitch = THREE.MathUtils.clamp(-event.beta / 45, -1, 1);
+        tiltYaw = THREE.MathUtils.clamp(-event.gamma / 45, -1, 1);
+        // Debug:
+        // console.log("Tilt:", tiltPitch.toFixed(2), tiltYaw.toFixed(2));
       }
       
-      // --- Throttle Buttons Setup ---
+      /***************** Throttle Button Setup *****************/
       document.getElementById("accelerateBtn").addEventListener("pointerdown", () => {
         throttleInput = 1;
       });
@@ -543,11 +555,56 @@
         throttleInput = 0;
       });
       
-      // --- Start the Simulator ---
+      /***************** Nipplejs Joystick Setup *****************/
+      function setupJoysticks() {
+        // Left joystick for additional pitch/yaw control.
+        const leftZone = document.getElementById("joystickLeft");
+        const joystickL = nipplejs.create({
+          zone: leftZone,
+          mode: "static",
+          position: { left: "50%", top: "50%" },
+          color: "blue",
+          size: 120
+        });
+        joystickL.on("move", (evt, data) => {
+          if (data && data.vector) {
+            // Combine joystick input with gyro by summing normalized values.
+            // You can tweak the weight if desired.
+            joystickInputLeft.x = data.vector.x;
+            joystickInputLeft.y = data.vector.y;
+          }
+        });
+        joystickL.on("end", () => {
+          joystickInputLeft.x = 0;
+          joystickInputLeft.y = 0;
+        });
+      
+        // Right joystick for additional throttle control (vertical axis only).
+        const rightZone = document.getElementById("joystickRight");
+        const joystickR = nipplejs.create({
+          zone: rightZone,
+          mode: "static",
+          position: { left: "50%", top: "50%" },
+          color: "red",
+          size: 120
+        });
+        joystickR.on("move", (evt, data) => {
+          if (data && data.vector) {
+            // Use only the vertical component.
+            joystickInputRight.y = data.vector.y;
+          }
+        });
+        joystickR.on("end", () => {
+          joystickInputRight.y = 0;
+        });
+      }
+      
+      /***************** Start Simulator *****************/
+      let tiltPitch = 0, tiltYaw = 0;
       init();
       createUFOs();
       createSkyContrails();
-      // (If you want to try additional on-screen joystick controls, you could integrate them here.)
+      setupJoysticks();
       requestAnimationFrame(animate);
     </script>
   </body>
