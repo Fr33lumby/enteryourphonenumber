@@ -230,7 +230,7 @@
       // Create sky contrails using a GridHelper.
       function createSkyContrails() {
         const grid = new THREE.GridHelper(10000, 100, 0xffffff, 0xffffff);
-        grid.position.y = 3000;
+        grid.position.y = 3000; // high up
         grid.material.opacity = 0.1;
         grid.material.transparent = true;
         grid.rotation.x = Math.PI / 2;
@@ -401,9 +401,9 @@
         }
       }
       
-      // Update flight based on combined keyboard and joystick inputs.
+      // Update flight controls using keyboard and joystick inputs.
       function updateFlight(delta) {
-        // Keyboard input for pitch and yaw.
+        // Keyboard input for pitch/yaw.
         let keyboardPitch = 0;
         if (keysPressed["ArrowUp"]) keyboardPitch += 1;
         if (keysPressed["ArrowDown"]) keyboardPitch -= 1;
@@ -582,7 +582,7 @@
         const joystickL = nipplejs.create({
           zone: leftZone,
           mode: 'static',
-          position: { left: '60px', bottom: '60px' },
+          position: { left: '50%', top: '50%' },
           color: 'blue',
           size: 120
         });
@@ -604,7 +604,7 @@
         const joystickR = nipplejs.create({
           zone: rightZone,
           mode: 'static',
-          position: { left: '60px', bottom: '60px' },
+          position: { left: '50%', top: '50%' },
           color: 'red',
           size: 120
         });
@@ -621,7 +621,7 @@
         });
       }
       
-      // Load font and initialize scene.
+      // Load font and initialize the scene.
       fontLoader.load("https://threejs.org/examples/fonts/helvetiker_regular.typeface.json", function(loadedFont) {
         font = loadedFont;
         createDigitTargets();
